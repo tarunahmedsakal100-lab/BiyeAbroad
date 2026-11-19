@@ -1,0 +1,325 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile representing a matrimony seeker on BiyeAbroad",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "age": { "type": "integer" },
+        "gender": { "type": "string" },
+        "country": { "type": "string" },
+        "city": { "type": "string" },
+        "countryOfOrigin": { "type": "string" },
+        "nationality": { "type": "string" },
+        "religion": { "type": "string" },
+        "education": { "type": "string" },
+        "profession": { "type": "string" },
+        "maritalStatus": { "type": "string" },
+        "height": { "type": "string" },
+        "bio": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "photoUrls": { "type": "array" },
+        "photoPublicId": { "type": "string" },
+        "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
+        "membershipTier": { "type": "string", "enum": ["free", "silver", "gold", "platinum"] },
+        "isSuspended": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "email", "createdAt"]
+    },
+    "Interest": {
+      "title": "Interest",
+      "description": "Interest sent between members",
+      "type": "object",
+      "properties": {
+        "interestId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["interestId", "senderId", "receiverId", "status", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Matchmaking conversation between two matched members",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string" },
+        "members": { "type": "array" },
+        "lastMessage": { "type": "string" },
+        "lastSenderId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "members"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Chat message inside a conversation",
+      "type": "object",
+      "properties": {
+        "messageId": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messageId", "conversationId", "senderId", "text", "createdAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "User complaint or moderation flag",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string" },
+        "reporterId": { "type": "string" },
+        "reportedUserId": { "type": "string" },
+        "reason": { "type": "string" },
+        "details": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "reviewed", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reportId", "reporterId", "reportedUserId", "reason", "status", "createdAt"]
+    },
+    "VerificationRequest": {
+      "title": "VerificationRequest",
+      "description": "Identity verification submission",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "userId": { "type": "string" },
+        "documentType": { "type": "string" },
+        "documentNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "adminNotes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requestId", "userId", "documentType", "status", "createdAt"]
+    },
+    "FamilyInvitation": {
+      "title": "FamilyInvitation",
+      "description": "Secure invitation sent by a primary seeker to family members",
+      "type": "object",
+      "properties": {
+        "invitationId": { "type": "string" },
+        "inviterUserId": { "type": "string" },
+        "inviterName": { "type": "string" },
+        "inviteeEmail": { "type": "string" },
+        "relationship": { "type": "string" },
+        "permissions": { "type": "array" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "expired", "revoked"] },
+        "token": { "type": "string" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "acceptedByUid": { "type": "string" },
+        "acceptedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invitationId", "inviterUserId", "inviteeEmail", "relationship", "status", "token", "expiresAt", "createdAt"]
+    },
+    "FamilyMembership": {
+      "title": "FamilyMembership",
+      "description": "Membership link binding independent family member auth account to primary seeker",
+      "type": "object",
+      "properties": {
+        "membershipId": { "type": "string" },
+        "primaryUserId": { "type": "string" },
+        "familyMemberUid": { "type": "string" },
+        "familyMemberEmail": { "type": "string" },
+        "familyMemberName": { "type": "string" },
+        "relationship": { "type": "string" },
+        "role": { "type": "string", "enum": ["family_member"] },
+        "permissions": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "invitationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["membershipId", "primaryUserId", "familyMemberUid", "relationship", "role", "status", "createdAt"]
+    },
+    "FamilyConsentRequest": {
+      "title": "FamilyConsentRequest",
+      "description": "Two-sided consent request between primary parties before creating Family Chat",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "requesterUserId": { "type": "string" },
+        "requesterName": { "type": "string" },
+        "targetUserId": { "type": "string" },
+        "targetName": { "type": "string" },
+        "requesterConsented": { "type": "boolean" },
+        "targetConsented": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["pending", "approved", "declined", "cancelled"] },
+        "familyChatId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requestId", "requesterUserId", "targetUserId", "requesterConsented", "targetConsented", "status", "createdAt"]
+    },
+    "FamilyChat": {
+      "title": "FamilyChat",
+      "description": "Separate group chat between two consented families",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "primaryUserIds": { "type": "array" },
+        "participantUids": { "type": "array" },
+        "title": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "consentRequestId": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "lastSenderId": { "type": "string" },
+        "lastSenderName": { "type": "string" },
+        "lastSenderRelation": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatId", "primaryUserIds", "participantUids", "title", "status", "createdAt"]
+    },
+    "FamilyChatMessage": {
+      "title": "FamilyChatMessage",
+      "description": "Messages sent inside a Family Chat room with relationship tag",
+      "type": "object",
+      "properties": {
+        "messageId": { "type": "string" },
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderRole": { "type": "string", "enum": ["seeker", "family_member"] },
+        "senderRelationship": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messageId", "chatId", "senderId", "senderName", "senderRelationship", "text", "createdAt"]
+    },
+    "Matchmaker": {
+      "title": "Matchmaker",
+      "description": "Professional matchmaker (Ghotok) partner profile",
+      "type": "object",
+      "properties": {
+        "matchmakerId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "country": { "type": "string" },
+        "city": { "type": "string" },
+        "experienceYears": { "type": "integer" },
+        "bio": { "type": "string" },
+        "verificationStatus": { "type": "string", "enum": ["pending", "verified", "rejected", "suspended"] },
+        "currentPlanId": { "type": "string" },
+        "maxManagedProfiles": { "type": "integer" },
+        "managedProfileCount": { "type": "integer" },
+        "termsAccepted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["matchmakerId", "fullName", "email", "phone", "verificationStatus"]
+    },
+    "ManagedProfile": {
+      "title": "ManagedProfile",
+      "description": "Candidate bride or groom biodata managed by a Matchmaker",
+      "type": "object",
+      "properties": {
+        "managedProfileId": { "type": "string" },
+        "matchmakerId": { "type": "string" },
+        "profileType": { "type": "string", "enum": ["bride", "groom"] },
+        "fullName": { "type": "string" },
+        "dateOfBirth": { "type": "string" },
+        "age": { "type": "integer", "minimum": 18 },
+        "gender": { "type": "string" },
+        "country": { "type": "string" },
+        "city": { "type": "string" },
+        "education": { "type": "string" },
+        "profession": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerRelationship": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "ownerPhone": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_consent", "pending_review", "approved", "rejected", "suspended"] },
+        "consentInvitationToken": { "type": "string" },
+        "grantedPermissions": { "type": "array" }
+      },
+      "required": ["managedProfileId", "matchmakerId", "fullName", "dateOfBirth", "age", "status"]
+    },
+    "MatchSuggestion": {
+      "title": "MatchSuggestion",
+      "description": "Match suggestion submitted by a Matchmaker to both candidate parties",
+      "type": "object",
+      "properties": {
+        "suggestionId": { "type": "string" },
+        "matchmakerId": { "type": "string" },
+        "profileAId": { "type": "string" },
+        "profileBId": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "declined"] }
+      },
+      "required": ["suggestionId", "matchmakerId", "profileAId", "profileBId", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile collection"
+    },
+    "/interests/{interestId}": {
+      "schema": { "$ref": "#/entities/Interest" },
+      "description": "Interest requests between users"
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Chat conversations between matched users"
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages inside a conversation"
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Abuse reports and user complaints"
+    },
+    "/verificationRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/VerificationRequest" },
+      "description": "Identity verification requests"
+    },
+    "/familyInvitations/{invitationId}": {
+      "schema": { "$ref": "#/entities/FamilyInvitation" },
+      "description": "Family invitations sent by primary seekers"
+    },
+    "/familyMemberships/{membershipId}": {
+      "schema": { "$ref": "#/entities/FamilyMembership" },
+      "description": "Active and revoked family memberships with role and permissions"
+    },
+    "/familyConsentRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/FamilyConsentRequest" },
+      "description": "Two-sided consent requests between prospective families"
+    },
+    "/familyChats/{chatId}": {
+      "schema": { "$ref": "#/entities/FamilyChat" },
+      "description": "Family discussion rooms unlocked after mutual consent"
+    },
+    "/familyChats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/FamilyChatMessage" },
+      "description": "Messages exchanged in Family Chat with role and relation badges"
+    },
+    "/matchmakers/{matchmakerId}": {
+      "schema": { "$ref": "#/entities/Matchmaker" },
+      "description": "Matchmaker profile and verification records"
+    },
+    "/managedProfiles/{managedProfileId}": {
+      "schema": { "$ref": "#/entities/ManagedProfile" },
+      "description": "Bride and groom candidate biodatas represented by matchmakers"
+    },
+    "/matchSuggestions/{suggestionId}": {
+      "schema": { "$ref": "#/entities/MatchSuggestion" },
+      "description": "Match suggestions submitted by matchmakers"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "358070534914",
+    "firebase_url": "https://biyeabroad-default-rtdb.firebaseio.com",
+    "project_id": "biyeabroad",
+    "storage_bucket": "biyeabroad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:358070534914:android:e19a62885467fdba14381b",
+        "android_client_info": {
+          "package_name": "com.Tarun.BiyeAbroad"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "358070534914-7l0qguufv4dsq65f3spv4igmdoben4dg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtKjcuq6FGyV9odZcyDR5VihTF6FAl9RM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "358070534914-7l0qguufv4dsq65f3spv4igmdoben4dg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

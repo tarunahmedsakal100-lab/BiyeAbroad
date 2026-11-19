@@ -1,0 +1,443 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.uid == 'xWDJ4WM2qiZXYLCAO924hAJFDuz1' ||
+        request.auth.uid == 'ZjO7C62fDZfRSXKYllQSoRFXFYg1' ||
+        request.auth.token.email == 'tarunahmedsakal100@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Helpers
+    function isValidUser(data) {
+      return data.userId is string && data.userId.size() > 0 &&
+             data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 100 &&
+             data.email is string &&
+             (!('age' in data) || (data.age is int && data.age >= 18 && data.age <= 100)) &&
+             (!('gender' in data) || (data.gender is string && data.gender.size() <= 30)) &&
+             (!('country' in data) || (data.country is string && data.country.size() <= 100)) &&
+             (!('city' in data) || (data.city is string && data.city.size() <= 100)) &&
+             (!('countryOfOrigin' in data) || (data.countryOfOrigin is string && data.countryOfOrigin.size() <= 100)) &&
+             (!('nationality' in data) || (data.nationality is string && data.nationality.size() <= 100)) &&
+             (!('religion' in data) || (data.religion is string && data.religion.size() <= 100)) &&
+             (!('education' in data) || (data.education is string && data.education.size() <= 150)) &&
+             (!('profession' in data) || (data.profession is string && data.profession.size() <= 150)) &&
+             (!('maritalStatus' in data) || (data.maritalStatus is string && data.maritalStatus.size() <= 50)) &&
+             (!('height' in data) || (data.height is string && data.height.size() <= 30)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 1500)) &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1000 && !data.photoUrl.matches('^data:.*'))) &&
+             (!('photoUrls' in data) || (data.photoUrls is list && data.photoUrls.size() <= 10)) &&
+             (!('photoPublicId' in data) || (data.photoPublicId is string && data.photoPublicId.size() <= 500)) &&
+             (!('verificationStatus' in data) || data.verificationStatus in ['unverified', 'pending', 'verified', 'rejected']) &&
+             (!('membershipTier' in data) || data.membershipTier in ['free', 'silver', 'gold', 'platinum']) &&
+             (!('isSuspended' in data) || data.isSuspended is bool) &&
+             (!('role' in data) || data.role in ['user', 'admin', 'matchmaker']);
+    }
+
+    function isValidInterest(data) {
+      return data.interestId is string && data.interestId.size() > 0 &&
+             data.senderId is string && data.senderId.size() > 0 &&
+             data.receiverId is string && data.receiverId.size() > 0 &&
+             data.status in ['pending', 'accepted', 'declined'];
+    }
+
+    function isValidConversation(data) {
+      return data.conversationId is string && data.conversationId.size() > 0 &&
+             data.members is list && data.members.size() >= 2 && data.members.size() <= 5 &&
+             (!('lastMessage' in data) || (data.lastMessage is string && data.lastMessage.size() <= 1000));
+    }
+
+    function isValidMessage(data) {
+      return data.messageId is string && data.messageId.size() > 0 &&
+             data.conversationId is string && data.conversationId.size() > 0 &&
+             data.senderId is string && data.senderId.size() > 0 &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 2000;
+    }
+
+    function isValidReport(data) {
+      return data.reportId is string && data.reportId.size() > 0 &&
+             data.reporterId is string && data.reporterId.size() > 0 &&
+             data.reportedUserId is string && data.reportedUserId.size() > 0 &&
+             data.reason is string && data.reason.size() <= 200 &&
+             (!('details' in data) || (data.details is string && data.details.size() <= 1000)) &&
+             data.status in ['open', 'reviewed', 'resolved'];
+    }
+
+    function isValidVerificationRequest(data) {
+      return data.requestId is string && data.requestId.size() > 0 &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.documentType is string && data.documentType.size() <= 50 &&
+             (!('documentNumber' in data) || (data.documentNumber is string && data.documentNumber.size() <= 100)) &&
+             data.status in ['pending', 'approved', 'rejected'];
+    }
+
+    function isValidFamilyInvitation(data) {
+      return data.invitationId is string && data.invitationId.size() > 0 &&
+             data.inviterUserId is string && data.inviterUserId.size() > 0 &&
+             data.inviteeEmail is string && data.inviteeEmail.size() > 0 &&
+             data.relationship is string && data.relationship.size() <= 50 &&
+             data.status in ['pending', 'accepted', 'declined', 'expired', 'revoked'] &&
+             data.token is string && data.token.size() >= 8 &&
+             data.expiresAt is timestamp;
+    }
+
+    function isValidFamilyMembership(data) {
+      return data.membershipId is string && data.membershipId.size() > 0 &&
+             data.primaryUserId is string && data.primaryUserId.size() > 0 &&
+             data.familyMemberUid is string && data.familyMemberUid.size() > 0 &&
+             data.relationship is string && data.relationship.size() <= 50 &&
+             data.role in ['family_member'] &&
+             data.status in ['active', 'revoked'];
+    }
+
+    function isValidFamilyConsentRequest(data) {
+      return data.requestId is string && data.requestId.size() > 0 &&
+             data.requesterUserId is string && data.requesterUserId.size() > 0 &&
+             data.targetUserId is string && data.targetUserId.size() > 0 &&
+             data.requesterConsented is bool &&
+             data.targetConsented is bool &&
+             data.status in ['pending', 'approved', 'declined', 'cancelled'];
+    }
+
+    function isValidFamilyChat(data) {
+      return data.chatId is string && data.chatId.size() > 0 &&
+             data.primaryUserIds is list && data.primaryUserIds.size() == 2 &&
+             data.participantUids is list && data.participantUids.size() >= 2 && data.participantUids.size() <= 30 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.status in ['active', 'archived'];
+    }
+
+    function isValidFamilyChatMessage(data) {
+      return data.messageId is string && data.messageId.size() > 0 &&
+             data.chatId is string && data.chatId.size() > 0 &&
+             data.senderId is string && data.senderId.size() > 0 &&
+             data.senderName is string && data.senderName.size() <= 100 &&
+             data.senderRole in ['seeker', 'family_member'] &&
+             data.senderRelationship is string && data.senderRelationship.size() <= 50 &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 2000;
+    }
+
+    // --- Collections ---
+
+    // Users Collection
+    match /users/{userId} {
+      allow get, list: if isSignedIn();
+      allow create: if isOwner(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       isValidUser(incoming());
+      allow update: if (isOwner(userId) &&
+                        incoming().userId == existing().userId &&
+                        isValidUser(incoming()) &&
+                        (!('role' in incoming()) || incoming().role == existing().role || isAdmin()) &&
+                        (!('isSuspended' in incoming()) || incoming().isSuspended == existing().isSuspended || isAdmin())) ||
+                       isAdmin();
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // Interests Collection
+    match /interests/{interestId} {
+      allow get: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() &&
+                       incoming().senderId == request.auth.uid &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidInterest(incoming());
+      allow update: if isSignedIn() &&
+                       (existing().receiverId == request.auth.uid || existing().senderId == request.auth.uid || isAdmin()) &&
+                       incoming().senderId == existing().senderId &&
+                       incoming().receiverId == existing().receiverId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidInterest(incoming());
+      allow delete: if isSignedIn() && (existing().senderId == request.auth.uid || isAdmin());
+    }
+
+    // Conversations Collection
+    match /conversations/{conversationId} {
+      allow get, list: if isSignedIn() && (request.auth.uid in resource.data.members || isAdmin());
+      allow create: if isSignedIn() &&
+                       request.auth.uid in incoming().members &&
+                       isValidConversation(incoming());
+      allow update: if isSignedIn() &&
+                       (request.auth.uid in existing().members || isAdmin()) &&
+                       isValidConversation(incoming());
+
+      // Messages Subcollection
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn() && (
+          request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.members ||
+          isAdmin()
+        );
+        allow create: if isSignedIn() &&
+                         request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.members &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().createdAt is timestamp &&
+                         incoming().createdAt <= request.time &&
+                         isValidMessage(incoming());
+      }
+    }
+
+    // Reports Collection
+    match /reports/{reportId} {
+      allow create: if isSignedIn() &&
+                       incoming().reporterId == request.auth.uid &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidReport(incoming());
+      allow get, list: if isAdmin() || (isSignedIn() && resource.data.reporterId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // Verification Requests Collection
+    match /verificationRequests/{requestId} {
+      allow create: if isSignedIn() &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidVerificationRequest(incoming());
+      allow get, list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // Admins Collection
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Family Invitations Collection
+    match /familyInvitations/{invitationId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.inviterUserId == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.inviteeEmail == request.auth.token.email.lower()) ||
+        resource.data.status == 'pending' ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+                       incoming().inviterUserId == request.auth.uid &&
+                       incoming().status == 'pending' &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidFamilyInvitation(incoming());
+      allow update: if (isSignedIn() && (
+        // Primary user revoking or updating invite
+        (resource.data.inviterUserId == request.auth.uid &&
+         incoming().inviterUserId == resource.data.inviterUserId) ||
+        // Invitee accepting or declining invite with their account / token
+        (resource.data.status == 'pending' &&
+         incoming().status in ['accepted', 'declined'] &&
+         incoming().acceptedByUid == request.auth.uid &&
+         incoming().inviterUserId == resource.data.inviterUserId &&
+         incoming().token == resource.data.token)
+      )) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Family Memberships Collection
+    match /familyMemberships/{membershipId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.primaryUserId == request.auth.uid ||
+        resource.data.familyMemberUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+                       (incoming().primaryUserId == request.auth.uid || incoming().familyMemberUid == request.auth.uid) &&
+                       incoming().role == 'family_member' &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidFamilyMembership(incoming());
+      // Users cannot elevate their own permissions or assign privileged roles
+      allow update: if (isSignedIn() && (
+        // Primary user managing/revoking family member permissions
+        (resource.data.primaryUserId == request.auth.uid &&
+         incoming().primaryUserId == resource.data.primaryUserId &&
+         incoming().familyMemberUid == resource.data.familyMemberUid &&
+         incoming().role == 'family_member')
+      )) || isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.primaryUserId == request.auth.uid);
+    }
+
+    // Family Consent Requests Collection (Two-sided consent)
+    match /familyConsentRequests/{requestId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.requesterUserId == request.auth.uid ||
+        resource.data.targetUserId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+                       incoming().requesterUserId == request.auth.uid &&
+                       incoming().requesterConsented == true &&
+                       incoming().targetConsented == false &&
+                       incoming().status == 'pending' &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidFamilyConsentRequest(incoming());
+      allow update: if (isSignedIn() && (
+        // Target party responding with consent or decline
+        (resource.data.targetUserId == request.auth.uid &&
+         incoming().requesterUserId == resource.data.requesterUserId &&
+         incoming().targetUserId == resource.data.targetUserId &&
+         incoming().status in ['approved', 'declined']) ||
+        // Requester party cancelling request
+        (resource.data.requesterUserId == request.auth.uid &&
+         incoming().status == 'cancelled')
+      )) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Family Chats Collection
+    match /familyChats/{chatId} {
+      allow get, list: if isSignedIn() && (
+        request.auth.uid in resource.data.participantUids ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+                       (request.auth.uid in incoming().primaryUserIds || request.auth.uid in incoming().participantUids) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       isValidFamilyChat(incoming());
+      allow update: if isSignedIn() && (
+        request.auth.uid in resource.data.participantUids ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+
+      // Subcollection: Messages
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn() && (
+          request.auth.uid in get(/databases/$(database)/documents/familyChats/$(chatId)).data.participantUids ||
+          isAdmin()
+        );
+        allow create: if isSignedIn() &&
+                         request.auth.uid in get(/databases/$(database)/documents/familyChats/$(chatId)).data.participantUids &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().createdAt is timestamp &&
+                         incoming().createdAt <= request.time &&
+                         isValidFamilyChatMessage(incoming());
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Matchmakers Collection
+    match /matchmakers/{matchmakerId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isSignedIn() && (request.auth.uid == matchmakerId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Matchmaker Applications Collection
+    match /matchmakerApplications/{applicationId} {
+      allow get, list: if isSignedIn() && (request.auth.uid == applicationId || isAdmin());
+      allow create, update: if isSignedIn() && (request.auth.uid == applicationId || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    // Managed Profiles Collection (Ghotok Managed Candidate Biodatas)
+    match /managedProfiles/{managedProfileId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.matchmakerId == request.auth.uid ||
+        resource.data.ownerUserId == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.ownerEmail == request.auth.token.email.lower()) ||
+        resource.data.consentStatus == 'approved' ||
+        resource.data.isPublished == true ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && (incoming().matchmakerId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (
+        resource.data.matchmakerId == request.auth.uid ||
+        resource.data.ownerUserId == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.ownerEmail == request.auth.token.email.lower()) ||
+        (resource.data.consentStatus == 'pending_consent' && incoming().ownerUserId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.matchmakerId == request.auth.uid);
+    }
+
+    // Profile Management Requests Collection (Two-Sided Consent)
+    match /profileManagementRequests/{requestId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.matchmakerId == request.auth.uid ||
+        resource.data.ownerUserId == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.candidateEmail == request.auth.token.email.lower()) ||
+        resource.data.status == 'pending' ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && (incoming().matchmakerId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (
+        resource.data.ownerUserId == request.auth.uid ||
+        resource.data.matchmakerId == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.candidateEmail == request.auth.token.email.lower()) ||
+        (resource.data.status == 'pending' && incoming().ownerUserId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.matchmakerId == request.auth.uid);
+    }
+
+    // Match Suggestions Collection
+    match /matchSuggestions/{suggestionId} {
+      allow get, list: if isSignedIn() && (
+        resource.data.matchmakerId == request.auth.uid ||
+        resource.data.profileAOwnerId == request.auth.uid ||
+        resource.data.profileBOwnerId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && (incoming().matchmakerId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (
+        resource.data.profileAOwnerId == request.auth.uid ||
+        resource.data.profileBOwnerId == request.auth.uid ||
+        resource.data.matchmakerId == request.auth.uid ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Matchmaker Plans Collection (Free Launch Plan & Future Tiers)
+    match /matchmakerPlans/{planId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Matchmaker Subscriptions Collection
+    match /matchmakerSubscriptions/{subscriptionId} {
+      allow get, list: if isSignedIn() && (resource.data.matchmakerId == request.auth.uid || isAdmin());
+      allow create, update: if isSignedIn() && (incoming().matchmakerId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Matchmaker Audit Logs Collection (Security Audit Trail)
+    match /matchmakerAuditLogs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+  }
+}

@@ -23,6 +23,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +47,9 @@ class AuthViewModel(private val repository: BiyeAbroadRepository) : ViewModel() 
     private val _userProfile = MutableStateFlow<UserProfile?>(null)
     val userProfile: StateFlow<UserProfile?> = _userProfile.asStateFlow()
 
+    private val _isProfileLoading = MutableStateFlow(auth.currentUser != null)
+    val isProfileLoading: StateFlow<Boolean> = _isProfileLoading.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -66,15 +71,23 @@ class AuthViewModel(private val repository: BiyeAbroadRepository) : ViewModel() 
     private val _demoUid = MutableStateFlow<String?>(null)
     val demoUid: StateFlow<String?> = _demoUid.asStateFlow()
 
+    private var profileLoadJob: Job? = null
+    private var matchmakerLoadJob: Job? = null
+
     init {
         auth.addAuthStateListener { firebaseAuth ->
             val user = firebaseAuth.currentUser
             _currentUser.value = user
             if (user != null) {
+                _isProfileLoading.value = true
                 checkAdminRole(user)
                 loadProfile(user.uid)
             } else {
+                profileLoadJob?.cancel()
+                matchmakerLoadJob?.cancel()
                 _userProfile.value = null
+                _matchmakerProfile.value = null
+                _isProfileLoading.value = false
                 _isAdmin.value = false
             }
         }
@@ -90,23 +103,29 @@ class AuthViewModel(private val repository: BiyeAbroadRepository) : ViewModel() 
     }
 
     private fun loadProfile(uid: String) {
-        viewModelScope.launch {
+        matchmakerLoadJob?.cancel()
+        matchmakerLoadJob = viewModelScope.launch {
             try {
                 // Check if user is a registered Matchmaker
                 repository.observeMatchmakerProfile(uid).collect { mm ->
                     if (mm != null && mm.matchmakerId.isNotBlank()) {
                         _matchmakerProfile.value = mm
                         _accountType.value = AccountType.MATCHMAKER
+                        _isProfileLoading.value = false
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w("AuthViewModel", "Matchmaker observe: ${e.message}")
             }
         }
 
-        viewModelScope.launch {
+        profileLoadJob?.cancel()
+        profileLoadJob = viewModelScope.launch {
             try {
                 repository.observeUserProfile(uid).collect { profile ->
+                    _isProfileLoading.value = false
                     if (profile != null) {
                         _userProfile.value = profile
                         if (profile.role == "admin") {
@@ -121,7 +140,10 @@ class AuthViewModel(private val repository: BiyeAbroadRepository) : ViewModel() 
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                _isProfileLoading.value = false
                 Log.w("AuthViewModel", "Profile observe: ${e.message}")
             }
         }

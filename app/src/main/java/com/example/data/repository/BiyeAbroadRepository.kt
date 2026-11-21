@@ -34,7 +34,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
-class BiyeAbroadRepository(private val db: FirebaseFirestore) {
+open class BiyeAbroadRepository(
+    private val db: FirebaseFirestore,
+    private val currentAuthUidProvider: () -> String? = { Firebase.auth.currentUser?.uid },
+    private val currentAuthEmailProvider: () -> String? = { Firebase.auth.currentUser?.email }
+) {
 
     constructor(context: Context) : this(
         FirebaseFirestore.getInstance(
@@ -42,19 +46,17 @@ class BiyeAbroadRepository(private val db: FirebaseFirestore) {
         )
     )
 
-    private val auth = Firebase.auth
-
     fun requireUserId(): String {
-        return auth.currentUser?.uid
-            ?: throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
+        return currentAuthUidProvider()?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("User must be signed in before accessing Firestore.")
     }
 
-    fun getCurrentUserId(): String? = auth.currentUser?.uid
+    open fun getCurrentUserId(): String? = currentAuthUidProvider()?.takeIf { it.isNotBlank() }
 
-    fun getCurrentUserEmail(): String? = auth.currentUser?.email
+    open fun getCurrentUserEmail(): String? = currentAuthEmailProvider()?.takeIf { it.isNotBlank() }
 
     // Observe user profile
-    fun observeUserProfile(userId: String): Flow<UserProfile?> {
+    open fun observeUserProfile(userId: String): Flow<UserProfile?> {
         val path = "users/$userId"
         return db.collection("users").document(userId)
             .snapshots()
@@ -65,10 +67,13 @@ class BiyeAbroadRepository(private val db: FirebaseFirestore) {
             }
     }
 
-    // Save or update profile
-    suspend fun saveUserProfile(profile: UserProfile): Result<Unit> {
-        val uid = (auth.currentUser?.uid?.takeIf { it.isNotBlank() } ?: profile.userId.takeIf { it.isNotBlank() })
-            ?: return Result.failure(IllegalStateException("User not authenticated"))
+    // Save or update profile (strictly scoped to authenticated user's own users/{uid} document)
+    open suspend fun saveUserProfile(profile: UserProfile): Result<Unit> {
+        val uid = getCurrentUserId()
+            ?: return Result.failure(IllegalStateException("Authentication required. Please sign in before saving your profile."))
+        if (profile.userId.isNotBlank() && profile.userId != uid) {
+            return Result.failure(SecurityException("You can only update your own profile document."))
+        }
         if (profile.photoUrl.trim().startsWith("data:", ignoreCase = true) ||
             profile.photoUrls.any { it.trim().startsWith("data:", ignoreCase = true) }
         ) {
@@ -81,7 +86,8 @@ class BiyeAbroadRepository(private val db: FirebaseFirestore) {
             val isNew = snapshot == null || !snapshot.exists()
 
             val safeDisplayName = profile.resolvedName().ifBlank { "Member" }
-            val safeEmail = (auth.currentUser?.email ?: profile.email).ifBlank { "member@biyeabroad.com" }
+            val safeEmail = (getCurrentUserEmail() ?: profile.email).ifBlank { "member@biyeabroad.com" }
+            val publicId = profile.resolvedCloudinaryPublicId()
 
             val data = mutableMapOf<String, Any>(
                 "userId" to uid,
@@ -111,7 +117,8 @@ class BiyeAbroadRepository(private val db: FirebaseFirestore) {
                 "familyInvolvementPreference" to profile.familyInvolvementPreference,
                 "photoUrl" to profile.photoUrl,
                 "photoUrls" to profile.photoUrls,
-                "photoPublicId" to profile.photoPublicId,
+                "cloudinaryPublicId" to publicId,
+                "photoPublicId" to publicId,
                 "verificationStatus" to profile.verificationStatus,
                 "membershipTier" to profile.membershipTier,
                 "isSuspended" to profile.isSuspended,
@@ -130,8 +137,8 @@ class BiyeAbroadRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    // Update only profile photo fields (secure_url + public_id) in Firestore
-    suspend fun updateUserProfilePhoto(
+    // Update only profile photo fields (photoUrl + cloudinaryPublicId) in the authenticated user's existing Firestore document
+    open suspend fun updateUserProfilePhoto(
         userId: String,
         secureUrl: String,
         publicId: String,
@@ -149,20 +156,22 @@ class BiyeAbroadRepository(private val db: FirebaseFirestore) {
             return Result.failure(IllegalArgumentException("A valid Cloudinary public_id is required."))
         }
 
-        val uid = auth.currentUser?.uid?.takeIf { it.isNotBlank() } ?: userId
-        if (uid.isBlank()) {
-            return Result.failure(IllegalStateException("User not authenticated"))
+        val uid = getCurrentUserId()
+            ?: return Result.failure(IllegalStateException("Authentication required. Please sign in before updating your profile photo."))
+        if (userId.isNotBlank() && userId != uid) {
+            return Result.failure(SecurityException("You can only update your own profile photo."))
         }
 
         val path = "users/$uid"
         return try {
             val userDoc = db.collection("users").document(uid)
-            val snapshot = try { userDoc.get().await() } catch (_: Exception) { null }
-            if (snapshot != null && snapshot.exists()) {
+            val snapshot = userDoc.get().await()
+            if (snapshot.exists()) {
                 userDoc.update(
                     mapOf(
                         "photoUrl" to cleanUrl,
                         "photoUrls" to listOf(cleanUrl),
+                        "cloudinaryPublicId" to cleanPublicId,
                         "photoPublicId" to cleanPublicId,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
@@ -170,12 +179,13 @@ class BiyeAbroadRepository(private val db: FirebaseFirestore) {
             } else {
                 val base = (fallbackProfile ?: UserProfile(
                     userId = uid,
-                    email = auth.currentUser?.email ?: "member@biyeabroad.com",
-                    displayName = auth.currentUser?.displayName ?: "Member"
+                    email = getCurrentUserEmail() ?: "member@biyeabroad.com",
+                    displayName = Firebase.auth.currentUser?.displayName ?: "Member"
                 )).copy(
                     userId = uid,
                     photoUrl = cleanUrl,
                     photoUrls = listOf(cleanUrl),
+                    cloudinaryPublicId = cleanPublicId,
                     photoPublicId = cleanPublicId
                 )
                 return saveUserProfile(base)
@@ -189,6 +199,7 @@ class BiyeAbroadRepository(private val db: FirebaseFirestore) {
                     mmDoc.update(
                         mapOf(
                             "photoUrl" to cleanUrl,
+                            "cloudinaryPublicId" to cleanPublicId,
                             "photoPublicId" to cleanPublicId,
                             "updatedAt" to FieldValue.serverTimestamp()
                         )

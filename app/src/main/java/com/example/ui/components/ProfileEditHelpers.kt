@@ -84,6 +84,8 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.example.data.remote.CloudinaryUploader
 import com.example.data.remote.PreparedPhotoUpload
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import com.example.ui.theme.biyeAbroadTextFieldColors
 import com.example.ui.theme.BurgundyDeep
 import com.example.ui.theme.BurgundyPrimary
@@ -782,7 +784,8 @@ fun ProfilePhotoPickerSection(
     onPhotoSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     onPhotoUploaded: ((secureUrl: String, publicId: String) -> Unit)? = null,
-    onPersistUploadedPhoto: (suspend (secureUrl: String, publicId: String) -> Result<Unit>)? = null
+    onPersistUploadedPhoto: (suspend (secureUrl: String, publicId: String) -> Result<Unit>)? = null,
+    isUploadAuthenticated: () -> Boolean = { Firebase.auth.currentUser != null }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -858,6 +861,38 @@ fun ProfilePhotoPickerSection(
         }
     }
 
+    val launchSystemPhotoPicker: () -> Unit = {
+        if (!isUploadAuthenticated()) {
+            val authMsg = "Authentication required. Please sign in before uploading a profile photo."
+            selectionError = authMsg
+            Toast.makeText(context, authMsg, Toast.LENGTH_LONG).show()
+        } else {
+            try {
+                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                } else {
+                    openDocumentLauncher.launch(
+                        arrayOf("image/jpeg", "image/jpg", "image/png", "image/webp", "image/*")
+                    )
+                }
+            } catch (_: Exception) {
+                try {
+                    openDocumentLauncher.launch(
+                        arrayOf("image/jpeg", "image/jpg", "image/png", "image/webp", "image/*")
+                    )
+                } catch (_: Exception) {
+                    try {
+                        getContentLauncher.launch("image/*")
+                    } catch (_: Exception) {
+                        selectionError = "Unable to open Android Photo Picker on this device."
+                    }
+                }
+            }
+        }
+    }
+
     // Camera Capture Launcher
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
@@ -899,6 +934,10 @@ fun ProfilePhotoPickerSection(
             successMessage = uploadSuccess,
             onConfirmUpload = {
                 if (isUploading) return@CloudinaryPhotoUploadDialog
+                if (!isUploadAuthenticated()) {
+                    uploadError = "Authentication required. Please sign in before uploading a profile photo."
+                    return@CloudinaryPhotoUploadDialog
+                }
                 scope.launch {
                     isUploading = true
                     uploadError = null
@@ -937,7 +976,7 @@ fun ProfilePhotoPickerSection(
                 pendingPrepared = null
                 uploadError = null
                 uploadSuccess = null
-                showSourceDialog = true
+                launchSystemPhotoPicker()
             },
             onDismiss = {
                 if (!isUploading) {
@@ -973,7 +1012,7 @@ fun ProfilePhotoPickerSection(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Choose a JPG, JPEG, PNG, or WEBP photo (max 5 MB). If Gallery shows empty folders, use Browse Photos & Downloads:",
+                        "Choose a JPG, JPEG, PNG, or WEBP photo (max 5 MB):",
                         fontSize = 12.sp,
                         color = DarkText
                     )
@@ -981,9 +1020,23 @@ fun ProfilePhotoPickerSection(
                     Button(
                         onClick = {
                             showSourceDialog = false
+                            launchSystemPhotoPicker()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BurgundyPrimary),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("btn_pick_gallery_photo")
+                    ) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp), tint = PureWhite)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Android Photo Picker (Gallery)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            showSourceDialog = false
                             try {
                                 openDocumentLauncher.launch(
-                                    arrayOf("image/*", "image/jpeg", "image/jpg", "image/png", "image/webp")
+                                    arrayOf("image/jpeg", "image/jpg", "image/png", "image/webp", "image/*")
                                 )
                             } catch (_: Exception) {
                                 try {
@@ -993,40 +1046,12 @@ fun ProfilePhotoPickerSection(
                                 }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = BurgundyPrimary),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth().testTag("btn_browse_device_files_helper")
                     ) {
-                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp), tint = PureWhite)
+                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp), tint = BurgundyPrimary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Browse Photos & Downloads (All Folders)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            showSourceDialog = false
-                            try {
-                                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
-                                    photoPickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                } else {
-                                    getContentLauncher.launch("image/*")
-                                }
-                            } catch (_: Exception) {
-                                try {
-                                    getContentLauncher.launch("image/*")
-                                } catch (_: Exception) {
-                                    selectionError = "Unable to open Photo Picker on this device."
-                                }
-                            }
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("btn_pick_gallery_photo")
-                    ) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp), tint = BurgundyPrimary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Android Photo Picker (Gallery)", fontSize = 12.sp, color = BurgundyPrimary, fontWeight = FontWeight.Bold)
+                        Text("Browse Photos & Downloads (All Folders)", fontSize = 12.sp, color = BurgundyPrimary, fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
@@ -1083,23 +1108,24 @@ fun ProfilePhotoPickerSection(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Photo Avatar Preview (Clickable to change)
+            // Photo Avatar Preview (Clickable to open System Photo Picker)
             Box(
                 modifier = Modifier
                     .size(80.dp)
                     .clip(CircleShape)
                     .background(Color(0xFFFFF1F2))
                     .border(2.dp, GoldBorder, CircleShape)
-                    .clickable { showSourceDialog = true }
+                    .clickable { launchSystemPhotoPicker() }
             ) {
                 if (currentPhotoUrl.isNotBlank()) {
+                    val request = remember(currentPhotoUrl) {
+                        ImageRequest.Builder(context)
+                            .data(currentPhotoUrl)
+                            .crossfade(true)
+                            .build()
+                    }
                     Image(
-                        painter = rememberAsyncImagePainter(
-                            model = ImageRequest.Builder(context)
-                                .data(currentPhotoUrl)
-                                .crossfade(true)
-                                .build()
-                        ),
+                        painter = rememberAsyncImagePainter(model = request),
                         contentDescription = "Profile Photo",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
@@ -1135,15 +1161,15 @@ fun ProfilePhotoPickerSection(
 
             Column(modifier = Modifier.weight(1f)) {
                 Button(
-                    onClick = { showSourceDialog = true },
+                    onClick = { launchSystemPhotoPicker() },
                     colors = ButtonDefaults.buttonColors(containerColor = BurgundyPrimary),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth().testTag("btn_choose_gallery_photo")
                 ) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp), tint = PureWhite)
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp), tint = PureWhite)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (currentPhotoUrl.isNotBlank()) "Change Photo" else "Upload / Change Photo",
+                        text = if (currentPhotoUrl.isNotBlank()) "Change Profile Photo" else "Choose Profile Photo",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = PureWhite
@@ -1152,14 +1178,37 @@ fun ProfilePhotoPickerSection(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CloudDone, contentDescription = null, tint = BurgundyPrimary, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "JPG, PNG, WEBP • Max 5 MB",
-                        fontSize = 10.sp,
-                        color = MutedText
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CloudDone, contentDescription = null, tint = BurgundyPrimary, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "JPG, PNG, WEBP • 5 MB",
+                            fontSize = 10.sp,
+                            color = MutedText
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            if (!isUploadAuthenticated()) {
+                                selectionError = "Authentication required. Please sign in before uploading a profile photo."
+                            } else {
+                                showSourceDialog = true
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_photo_more_sources")
+                    ) {
+                        Text(
+                            text = "Folders / Camera",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = BurgundyPrimary
+                        )
+                    }
                 }
                 if (!selectionError.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))

@@ -23,6 +23,7 @@
         "photoUrl": { "type": "string" },
         "photoUrls": { "type": "array" },
         "photoPublicId": { "type": "string" },
+        "cloudinaryPublicId": { "type": "string" },
         "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
         "membershipTier": { "type": "string", "enum": ["free", "silver", "gold", "platinum"] },
         "isSuspended": { "type": "boolean" },

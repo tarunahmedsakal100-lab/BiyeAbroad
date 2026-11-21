@@ -121,7 +121,7 @@ class MainViewModel(
         when {
             repoProf != null && custom != null -> {
                 if (repoProf.photoUrl == custom.photoUrl &&
-                    repoProf.photoPublicId == custom.photoPublicId &&
+                    repoProf.resolvedCloudinaryPublicId() == custom.resolvedCloudinaryPublicId() &&
                     repoProf.displayName == custom.displayName
                 ) {
                     repoProf
@@ -325,7 +325,10 @@ class MainViewModel(
         publicId: String,
         fallbackProfile: UserProfile? = null
     ): Result<Unit> {
-        val targetUid = repository.getCurrentUserId()?.takeIf { it.isNotBlank() } ?: currentUserId
+        val targetUid = repository.getCurrentUserId()
+            ?: return Result.failure(
+                IllegalStateException("Authentication required. Please sign in to save your profile photo.")
+            )
         val baseProfile = (myProfile.value ?: fallbackProfile ?: UserProfile(
             userId = targetUid,
             email = repository.getCurrentUserEmail() ?: "",
@@ -334,27 +337,21 @@ class MainViewModel(
             userId = targetUid,
             photoUrl = secureUrl,
             photoUrls = listOf(secureUrl),
+            cloudinaryPublicId = publicId,
             photoPublicId = publicId
         )
 
-        // Refresh UI immediately
-        _customProfile.value = baseProfile
-
-        val hasFirebaseSession = repository.getCurrentUserId() != null
-        return if (hasFirebaseSession) {
-            val saveRes = repository.updateUserProfilePhoto(
-                userId = targetUid,
-                secureUrl = secureUrl,
-                publicId = publicId,
-                fallbackProfile = baseProfile
-            )
-            if (saveRes.isSuccess) {
-                _userFeedback.value = "Profile photo saved to your account!"
-            }
-            saveRes
-        } else {
-            Result.success(Unit)
+        val saveRes = repository.updateUserProfilePhoto(
+            userId = targetUid,
+            secureUrl = secureUrl,
+            publicId = publicId,
+            fallbackProfile = baseProfile
+        )
+        if (saveRes.isSuccess) {
+            _customProfile.value = baseProfile
+            _userFeedback.value = "Profile photo saved to your account!"
         }
+        return saveRes
     }
 
     fun uploadAndSaveProfilePhoto(
@@ -362,6 +359,15 @@ class MainViewModel(
         fallbackProfile: UserProfile? = null,
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
+        val authUid = repository.getCurrentUserId()
+        if (authUid.isNullOrBlank()) {
+            val authMsg = "Authentication required. Please sign in before uploading a profile photo."
+            _photoUploadState.value = PhotoUploadUiState.Error(authMsg)
+            _userFeedback.value = authMsg
+            onComplete(false, authMsg)
+            return
+        }
+
         viewModelScope.launch {
             _photoUploadState.value = PhotoUploadUiState.Uploading(0.02f)
             val uploadResult = cloudinaryUploader.uploadPreparedPhoto(prepared) { progress ->
@@ -376,29 +382,21 @@ class MainViewModel(
             }
 
             val uploaded = uploadResult.getOrThrow()
-            val hasFirebaseSession = repository.getCurrentUserId() != null
             val saveRes = saveUploadedPhotoToProfile(
                 secureUrl = uploaded.secureUrl,
                 publicId = uploaded.publicId,
                 fallbackProfile = fallbackProfile
             )
-            if (hasFirebaseSession) {
-                if (saveRes.isSuccess) {
-                    _photoUploadState.value = PhotoUploadUiState.Success(uploaded, syncedToCloud = true)
-                    val successMsg = "Profile photo uploaded and saved!"
-                    _userFeedback.value = successMsg
-                    onComplete(true, successMsg)
-                } else {
-                    val errMsg = "Photo uploaded to Cloudinary, but failed to save to Firestore: ${saveRes.exceptionOrNull()?.message ?: "Please retry."}"
-                    _photoUploadState.value = PhotoUploadUiState.Error(errMsg)
-                    _userFeedback.value = errMsg
-                    onComplete(false, errMsg)
-                }
-            } else {
-                _photoUploadState.value = PhotoUploadUiState.Success(uploaded, syncedToCloud = false)
-                val successMsg = "Profile photo uploaded successfully!"
+            if (saveRes.isSuccess) {
+                _photoUploadState.value = PhotoUploadUiState.Success(uploaded, syncedToCloud = true)
+                val successMsg = "Profile photo uploaded and saved!"
                 _userFeedback.value = successMsg
                 onComplete(true, successMsg)
+            } else {
+                val errMsg = "Photo uploaded to Cloudinary, but failed to save to Firestore: ${saveRes.exceptionOrNull()?.message ?: "Please retry."}"
+                _photoUploadState.value = PhotoUploadUiState.Error(errMsg)
+                _userFeedback.value = errMsg
+                onComplete(false, errMsg)
             }
         }
     }

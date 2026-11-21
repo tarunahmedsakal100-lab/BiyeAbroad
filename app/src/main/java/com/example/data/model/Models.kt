@@ -36,6 +36,7 @@ data class UserProfile(
     val photoUrl: String = "",
     val photoUrls: List<String> = emptyList(),
     val photoPublicId: String = "",
+    val cloudinaryPublicId: String = "",
     val verificationStatus: String = "unverified", // "unverified", "pending", "verified", "rejected"
     val membershipTier: String = "free", // "free", "silver", "gold", "platinum"
     val isSuspended: Boolean = false,
@@ -43,6 +44,8 @@ data class UserProfile(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
+    fun resolvedCloudinaryPublicId(): String = cloudinaryPublicId.ifBlank { photoPublicId }
+
     /**
      * Resolves display name preferring First Name + Last Name when available.
      */

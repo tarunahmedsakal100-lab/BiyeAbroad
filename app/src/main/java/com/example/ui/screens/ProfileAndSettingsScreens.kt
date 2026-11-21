@@ -166,6 +166,7 @@ fun ProfileScreen(
 
     val scope = rememberCoroutineScope()
     val photoUploadState by mainViewModel.photoUploadState.collectAsState()
+    val firebaseAuthUser by authViewModel.currentUser.collectAsState()
     var showPhotoSourceDialog by remember { mutableStateOf(false) }
     var pendingPhotoUpload by remember { mutableStateOf<PreparedPhotoUpload?>(null) }
     var photoSelectionFeedback by remember { mutableStateOf<String?>(null) }
@@ -223,6 +224,38 @@ fun ProfileScreen(
             }
         } else {
             handleCancelledPhotoSelection()
+        }
+    }
+
+    val launchSystemPhotoPicker: () -> Unit = {
+        if (firebaseAuthUser == null) {
+            val authMsg = "Authentication required. Please sign in to change your profile photo."
+            photoSelectionFeedback = authMsg
+            Toast.makeText(context, authMsg, Toast.LENGTH_LONG).show()
+        } else {
+            try {
+                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                } else {
+                    openDocumentLauncher.launch(
+                        arrayOf("image/jpeg", "image/jpg", "image/png", "image/webp", "image/*")
+                    )
+                }
+            } catch (_: Exception) {
+                try {
+                    openDocumentLauncher.launch(
+                        arrayOf("image/jpeg", "image/jpg", "image/png", "image/webp", "image/*")
+                    )
+                } catch (_: Exception) {
+                    try {
+                        getContentLauncher.launch("image/*")
+                    } catch (_: Exception) {
+                        photoSelectionFeedback = "Unable to open Android Photo Picker on this device."
+                    }
+                }
+            }
         }
     }
 
@@ -294,7 +327,7 @@ fun ProfileScreen(
             onChooseAnother = {
                 mainViewModel.resetPhotoUploadState()
                 pendingPhotoUpload = null
-                showPhotoSourceDialog = true
+                launchSystemPhotoPicker()
             },
             onDismiss = {
                 if (!isUploading) {
@@ -452,23 +485,25 @@ fun ProfileScreen(
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Clickable Avatar with Camera Badge Overlay
+                // Clickable Avatar with Camera Badge Overlay (opens AndroidX Photo Picker)
                 Box(
                     modifier = Modifier
                         .size(92.dp)
                         .clip(CircleShape)
                         .background(BurgundyDeep)
                         .border(2.5.dp, GoldAccent, CircleShape)
-                        .clickable { showPhotoSourceDialog = true }
+                        .clickable { launchSystemPhotoPicker() }
                 ) {
-                    if (!myProfile?.photoUrl.isNullOrBlank()) {
+                    val activePhotoUrl = myProfile?.photoUrl.orEmpty()
+                    if (activePhotoUrl.isNotBlank()) {
+                        val avatarRequest = remember(activePhotoUrl) {
+                            ImageRequest.Builder(context)
+                                .data(activePhotoUrl)
+                                .crossfade(true)
+                                .build()
+                        }
                         Image(
-                            painter = rememberAsyncImagePainter(
-                                model = ImageRequest.Builder(context)
-                                    .data(myProfile!!.photoUrl)
-                                    .crossfade(true)
-                                    .build()
-                            ),
+                            painter = rememberAsyncImagePainter(model = avatarRequest),
                             contentDescription = "Avatar",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
@@ -544,9 +579,9 @@ fun ProfileScreen(
                         Text("Edit Biodata", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BurgundyPrimary)
                     }
 
-                    // Direct Upload / Replace Photo Button
+                    // Direct Upload / Change Profile Photo Button (launches AndroidX PickVisualMedia Photo Picker)
                     Button(
-                        onClick = { showPhotoSourceDialog = true },
+                        onClick = { launchSystemPhotoPicker() },
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = BurgundyPrimary,
@@ -554,10 +589,10 @@ fun ProfileScreen(
                         ),
                         modifier = Modifier.weight(1f).testTag("change_photo_btn")
                     ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = PureWhite, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = PureWhite, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (!myProfile?.photoUrl.isNullOrBlank()) "Replace Photo" else "Upload Photo",
+                            text = if (!myProfile?.photoUrl.isNullOrBlank()) "Change Photo" else "Upload Photo",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = PureWhite
@@ -565,8 +600,31 @@ fun ProfileScreen(
                     }
                 }
 
+                // Secondary link for Device Folders / Camera when needed
+                TextButton(
+                    onClick = {
+                        if (firebaseAuthUser == null) {
+                            val authMsg = "Authentication required. Please sign in to change your profile photo."
+                            photoSelectionFeedback = authMsg
+                            Toast.makeText(context, authMsg, Toast.LENGTH_LONG).show()
+                        } else {
+                            showPhotoSourceDialog = true
+                        }
+                    },
+                    modifier = Modifier.testTag("btn_more_photo_sources")
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null, tint = BurgundyPrimary, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Browse Device Folders or Camera",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = BurgundyPrimary
+                    )
+                }
+
                 if (!photoSelectionFeedback.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = photoSelectionFeedback!!,
                         fontSize = 11.sp,

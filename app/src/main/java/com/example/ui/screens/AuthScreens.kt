@@ -2049,6 +2049,7 @@ fun OnboardingScreen(
                             photoUrl = photoUrl.trim(),
                             photoUrls = if (photoUrl.isNotBlank()) listOf(photoUrl.trim()) else emptyList(),
                             photoPublicId = photoPublicId,
+                            cloudinaryPublicId = photoPublicId,
                             verificationStatus = "unverified"
                         )
                         authViewModel.completeOnboarding(profile, onComplete)
@@ -2101,6 +2102,7 @@ fun OnboardingScreen(
                             photoUrl = photoUrl,
                             photoUrls = if (photoUrl.isNotBlank()) listOf(photoUrl) else emptyList(),
                             photoPublicId = photoPublicId,
+                            cloudinaryPublicId = photoPublicId,
                             verificationStatus = "unverified"
                         )
                         authViewModel.completeOnboarding(defaultProf, onComplete)

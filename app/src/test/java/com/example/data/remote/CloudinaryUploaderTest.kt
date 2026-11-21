@@ -280,7 +280,20 @@ class CloudinaryUploaderTest {
             FirebaseApp.getInstance()
         }
         val db = FirebaseFirestore.getInstance(app, context.getString(com.example.R.string.firestore_database_id))
-        val repository = BiyeAbroadRepository(db)
+        val unauthRepo = BiyeAbroadRepository(db)
+        val unauthPhotoRes = unauthRepo.updateUserProfilePhoto(
+            userId = "user_1",
+            secureUrl = "https://res.cloudinary.com/v0c1td87/image/upload/v1/avatar.jpg",
+            publicId = "biyeabroad/avatar"
+        )
+        assertTrue(unauthPhotoRes.isFailure)
+        assertTrue(unauthPhotoRes.exceptionOrNull()?.message?.contains("Authentication required") == true)
+
+        val repository = BiyeAbroadRepository(
+            db = db,
+            currentAuthUidProvider = { "user_1" },
+            currentAuthEmailProvider = { "test@biyeabroad.com" }
+        )
 
         val saveRes = repository.saveUserProfile(
             UserProfile(
@@ -299,6 +312,20 @@ class CloudinaryUploaderTest {
             publicId = "id_1"
         )
         assertTrue(photoRes.isFailure)
+
+        // Authenticated user cannot update another user's profile photo
+        val authRepo = BiyeAbroadRepository(
+            db = db,
+            currentAuthUidProvider = { "alice_123" },
+            currentAuthEmailProvider = { "alice@biyeabroad.com" }
+        )
+        val crossUserRes = authRepo.updateUserProfilePhoto(
+            userId = "bob_456",
+            secureUrl = "https://res.cloudinary.com/v0c1td87/image/upload/v1/avatar.jpg",
+            publicId = "biyeabroad/avatar"
+        )
+        assertTrue(crossUserRes.isFailure)
+        assertTrue(crossUserRes.exceptionOrNull() is SecurityException)
     }
 
     @Test
@@ -385,7 +412,7 @@ class CloudinaryUploaderTest {
     }
 
     @Test
-    fun editProfileDialog_changePhotoOpensGalleryAndFolderSourceDialog() {
+    fun editProfileDialog_requiresAuthAndExposesDirectPickerAndSourceOptions() {
         val sampleProfile = UserProfile(
             userId = "member_99",
             firstName = "Nusrat",
@@ -399,17 +426,26 @@ class CloudinaryUploaderTest {
             profession = "Physician"
         )
 
+        var authed = false
         composeTestRule.setContent {
             EditProfileDialog(
                 profile = sampleProfile,
                 onDismiss = {},
                 onSave = {},
-                onPersistUploadedPhoto = { _, _ -> Result.success(Unit) }
+                onPersistUploadedPhoto = { _, _ -> Result.success(Unit) },
+                isUploadAuthenticated = { authed }
             )
         }
 
         composeTestRule.waitForIdle()
+        // Unauthenticated user cannot launch photo upload
         composeTestRule.onNodeWithTag("btn_choose_gallery_photo").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("photo_selection_error").performScrollTo().assertIsDisplayed()
+
+        // Authenticated user can access Folders / Camera source dialog & direct picker button
+        authed = true
+        composeTestRule.onNodeWithTag("btn_photo_more_sources").performScrollTo().performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Select Profile Photo Source").assertIsDisplayed()
         composeTestRule.onNodeWithTag("btn_browse_device_files_helper").assertIsDisplayed()
@@ -417,8 +453,7 @@ class CloudinaryUploaderTest {
         composeTestRule.onNodeWithTag("btn_pick_any_gallery_helper").assertIsDisplayed()
     }
 
-    @Test
-    fun mainViewModel_uploadAndSaveProfilePhoto_updatesPhotoWhilePreservingBiodata(): Unit = runBlocking {
+    private fun initTestDb(): FirebaseFirestore {
         val app = if (FirebaseApp.getApps(context).isEmpty()) {
             FirebaseApp.initializeApp(
                 context,
@@ -431,8 +466,96 @@ class CloudinaryUploaderTest {
         } else {
             FirebaseApp.getInstance()
         }
-        val db = FirebaseFirestore.getInstance(app, context.getString(com.example.R.string.firestore_database_id))
-        val repository = BiyeAbroadRepository(db)
+        return FirebaseFirestore.getInstance(app, context.getString(com.example.R.string.firestore_database_id))
+    }
+
+    @Test
+    fun mainViewModel_blocksUnauthenticatedCloudinaryUpload(): Unit = runBlocking {
+        val db = initTestDb()
+        var httpRequestCount = 0
+        val httpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        httpServer.createContext("/v1_1/v0c1td87/image/upload") { exchange ->
+            httpRequestCount++
+            exchange.sendResponseHeaders(200, 0)
+            exchange.responseBody.close()
+        }
+        httpServer.start()
+        server = httpServer
+
+        val unauthRepo = BiyeAbroadRepository(db = db, currentAuthUidProvider = { null })
+        val uploader = CloudinaryUploader(
+            uploadUrl = "http://127.0.0.1:${httpServer.address.port}/v1_1/v0c1td87/image/upload"
+        )
+        val viewModel = MainViewModel(
+            repository = unauthRepo,
+            currentUserId = "guest",
+            cloudinaryUploader = uploader
+        )
+        val prepared = PreparedPhotoUpload(
+            bytes = validPngBytes(512),
+            fileName = "portrait.png",
+            mimeType = "image/png",
+            formatLabel = "PNG",
+            sizeBytes = 512L
+        )
+        var callbackOk = true
+        var callbackMsg = ""
+        viewModel.uploadAndSaveProfilePhoto(prepared) { ok, msg ->
+            callbackOk = ok
+            callbackMsg = msg
+        }
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertFalse(callbackOk)
+        assertTrue(callbackMsg.contains("Authentication required"))
+        assertEquals(0, httpRequestCount)
+    }
+
+    @Test
+    fun mainViewModel_uploadAndSaveProfilePhoto_savesCloudinaryPublicIdAndRestoresOnRestart(): Unit = runBlocking {
+        val db = initTestDb()
+
+        val initialProfile = UserProfile(
+            userId = "member_99",
+            firstName = "Nusrat",
+            lastName = "Jahan",
+            displayName = "Nusrat Jahan",
+            email = "nusrat@biyeabroad.com",
+            age = 27,
+            gender = "female",
+            country = "Canada",
+            city = "Toronto",
+            profession = "Physician",
+            bio = "Family-oriented diaspora physician in Toronto."
+        )
+
+        var storedProfile = initialProfile
+        val persistedFields = mutableMapOf<String, String>()
+        val authRepo = object : BiyeAbroadRepository(
+            db = db,
+            currentAuthUidProvider = { "member_99" },
+            currentAuthEmailProvider = { "nusrat@biyeabroad.com" }
+        ) {
+            override fun observeUserProfile(userId: String): kotlinx.coroutines.flow.Flow<UserProfile?> =
+                kotlinx.coroutines.flow.flowOf(storedProfile)
+
+            override suspend fun updateUserProfilePhoto(
+                userId: String,
+                secureUrl: String,
+                publicId: String,
+                fallbackProfile: UserProfile?
+            ): Result<Unit> {
+                assertEquals("member_99", userId)
+                persistedFields["photoUrl"] = secureUrl
+                persistedFields["cloudinaryPublicId"] = publicId
+                storedProfile = storedProfile.copy(
+                    photoUrl = secureUrl,
+                    photoUrls = listOf(secureUrl),
+                    cloudinaryPublicId = publicId,
+                    photoPublicId = publicId
+                )
+                return Result.success(Unit)
+            }
+        }
 
         val httpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         httpServer.createContext("/v1_1/v0c1td87/image/upload") { exchange ->
@@ -456,23 +579,9 @@ class CloudinaryUploaderTest {
             uploadUrl = "http://127.0.0.1:${httpServer.address.port}/v1_1/v0c1td87/image/upload"
         )
         val viewModel = MainViewModel(
-            repository = repository,
+            repository = authRepo,
             currentUserId = "member_99",
             cloudinaryUploader = uploader
-        )
-
-        val initialProfile = UserProfile(
-            userId = "member_99",
-            firstName = "Nusrat",
-            lastName = "Jahan",
-            displayName = "Nusrat Jahan",
-            email = "nusrat@biyeabroad.com",
-            age = 27,
-            gender = "female",
-            country = "Canada",
-            city = "Toronto",
-            profession = "Physician",
-            bio = "Family-oriented diaspora physician in Toronto."
         )
 
         val prepared = PreparedPhotoUpload(
@@ -500,16 +609,38 @@ class CloudinaryUploaderTest {
         org.robolectric.shadows.ShadowLooper.idleMainLooper()
         val updated = viewModel.myProfile.value
         collectJob.cancel()
+
         assertTrue("Expected upload callback success, got ok=$callbackOk msg=$callbackMsg", callbackOk)
         assertNotNull(updated)
-        assertEquals(
-            "https://res.cloudinary.com/v0c1td87/image/upload/v1731900000/biyeabroad/preserved_bio.png",
-            updated?.photoUrl
-        )
+        val expectedUrl = "https://res.cloudinary.com/v0c1td87/image/upload/v1731900000/biyeabroad/preserved_bio.png"
+        assertEquals(expectedUrl, persistedFields["photoUrl"])
+        assertEquals("biyeabroad/preserved_bio", persistedFields["cloudinaryPublicId"])
+        assertEquals(expectedUrl, updated?.photoUrl)
+        assertEquals("biyeabroad/preserved_bio", updated?.cloudinaryPublicId)
         assertEquals("biyeabroad/preserved_bio", updated?.photoPublicId)
         assertEquals("Nusrat Jahan", updated?.displayName)
         assertEquals("Physician", updated?.profession)
         assertEquals("Toronto", updated?.city)
         assertEquals("Family-oriented diaspora physician in Toronto.", updated?.bio)
+
+        // Simulate app restart / fresh login with a new MainViewModel reading from persisted store
+        val restartedViewModel = MainViewModel(
+            repository = authRepo,
+            currentUserId = "member_99",
+            cloudinaryUploader = uploader
+        )
+        val restartCollectJob = launch(kotlinx.coroutines.Dispatchers.Unconfined) {
+            restartedViewModel.myProfile.collect {}
+        }
+        for (i in 0..40) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            if (restartedViewModel.myProfile.value != null) break
+            delay(25)
+        }
+        val restored = restartedViewModel.myProfile.value
+        restartCollectJob.cancel()
+        assertNotNull(restored)
+        assertEquals(expectedUrl, restored?.photoUrl)
+        assertEquals("biyeabroad/preserved_bio", restored?.cloudinaryPublicId)
     }
 }

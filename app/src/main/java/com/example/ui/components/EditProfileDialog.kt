@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.UserProfile
+import com.google.firebase.auth.auth
 import com.example.ui.theme.BurgundyDeep
 import com.example.ui.theme.BurgundyPrimary
 import com.example.ui.theme.DarkText
@@ -77,7 +78,8 @@ fun EditProfileDialog(
     profile: UserProfile,
     onDismiss: () -> Unit,
     onSave: (UserProfile) -> Unit,
-    onPersistUploadedPhoto: (suspend (secureUrl: String, publicId: String) -> Result<Unit>)? = null
+    onPersistUploadedPhoto: (suspend (secureUrl: String, publicId: String) -> Result<Unit>)? = null,
+    isUploadAuthenticated: () -> Boolean = { com.google.firebase.Firebase.auth.currentUser != null }
 ) {
     var firstName by remember {
         mutableStateOf(
@@ -142,7 +144,7 @@ fun EditProfileDialog(
     var familyInvolvementPreference by remember { mutableStateOf(profile.familyInvolvementPreference) }
     var photoUrl by remember { mutableStateOf(profile.photoUrl) }
     var photoUrls by remember { mutableStateOf(profile.photoUrls) }
-    var photoPublicId by remember { mutableStateOf(profile.photoPublicId) }
+    var photoPublicId by remember { mutableStateOf(profile.resolvedCloudinaryPublicId()) }
     var validationError by remember { mutableStateOf<String?>(null) }
 
     val dialogScrollState = rememberScrollState()
@@ -261,7 +263,8 @@ fun EditProfileDialog(
                                     familyInvolvementPreference = familyInvolvementPreference,
                                     photoUrl = photoUrl.trim(),
                                     photoUrls = if (photoUrls.isNotEmpty()) photoUrls else if (photoUrl.isNotBlank()) listOf(photoUrl.trim()) else emptyList(),
-                                    photoPublicId = photoPublicId
+                                    photoPublicId = photoPublicId,
+                                    cloudinaryPublicId = photoPublicId
                                 )
                                 onSave(updated)
                                 onDismiss()
@@ -514,7 +517,8 @@ fun EditProfileDialog(
                                     photoUrls = listOf(secureUrl)
                                     photoPublicId = publicId
                                 },
-                                onPersistUploadedPhoto = onPersistUploadedPhoto
+                                onPersistUploadedPhoto = onPersistUploadedPhoto,
+                                isUploadAuthenticated = isUploadAuthenticated
                             )
                         }
                     }
@@ -857,7 +861,8 @@ fun EditProfileDialog(
                                 familyInvolvementPreference = familyInvolvementPreference,
                                 photoUrl = photoUrl.trim(),
                                 photoUrls = if (photoUrls.isNotEmpty()) photoUrls else if (photoUrl.isNotBlank()) listOf(photoUrl.trim()) else emptyList(),
-                                photoPublicId = photoPublicId
+                                photoPublicId = photoPublicId,
+                                cloudinaryPublicId = photoPublicId
                             )
                             onSave(updated)
                             onDismiss()

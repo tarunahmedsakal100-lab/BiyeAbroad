@@ -114,18 +114,21 @@ test("Authenticated user: cannot update another user's profile", async () => {
   await assertFails(
     aliceDb.collection("users").doc(BOB_UID).update({
       photoUrl: "https://res.cloudinary.com/v0c1td87/image/upload/v1/hack.jpg",
+      cloudinaryPublicId: "hack",
       photoPublicId: "hack",
     })
   );
 });
 
-test("Authenticated owner: can update own Cloudinary photoUrl and photoPublicId; Base64 rejected", async () => {
+test("Authenticated owner: can update own Cloudinary photoUrl and cloudinaryPublicId while preserving fields; Base64 rejected", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@test.com" }).firestore();
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).set({
       userId: ALICE_UID,
       displayName: "Alice Khan",
       email: "alice@test.com",
+      profession: "Physician",
+      city: "Toronto",
       role: "user",
       isSuspended: false,
       createdAt: new Date(),
@@ -136,14 +139,22 @@ test("Authenticated owner: can update own Cloudinary photoUrl and photoPublicId;
     aliceDb.collection("users").doc(ALICE_UID).update({
       photoUrl: "https://res.cloudinary.com/v0c1td87/image/upload/v1731880000/biyeabroad/alice.jpg",
       photoUrls: ["https://res.cloudinary.com/v0c1td87/image/upload/v1731880000/biyeabroad/alice.jpg"],
+      cloudinaryPublicId: "biyeabroad/alice",
       photoPublicId: "biyeabroad/alice",
       updatedAt: new Date(),
     })
   );
 
+  const snap = await aliceDb.collection("users").doc(ALICE_UID).get();
+  const data = snap.data();
+  if (data.cloudinaryPublicId !== "biyeabroad/alice" || data.profession !== "Physician" || data.city !== "Toronto") {
+    throw new Error("Expected cloudinaryPublicId saved and existing fields preserved");
+  }
+
   await assertFails(
     aliceDb.collection("users").doc(ALICE_UID).update({
       photoUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
+      cloudinaryPublicId: "bad_base64",
       photoPublicId: "bad_base64",
     })
   );

@@ -57,6 +57,7 @@ service cloud.firestore {
              (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1000 && !data.photoUrl.matches('^data:.*'))) &&
              (!('photoUrls' in data) || (data.photoUrls is list && data.photoUrls.size() <= 10)) &&
              (!('photoPublicId' in data) || (data.photoPublicId is string && data.photoPublicId.size() <= 500)) &&
+             (!('cloudinaryPublicId' in data) || (data.cloudinaryPublicId is string && data.cloudinaryPublicId.size() <= 500)) &&
              (!('verificationStatus' in data) || data.verificationStatus in ['unverified', 'pending', 'verified', 'rejected']) &&
              (!('membershipTier' in data) || data.membershipTier in ['free', 'silver', 'gold', 'platinum']) &&
              (!('isSuspended' in data) || data.isSuspended is bool) &&
